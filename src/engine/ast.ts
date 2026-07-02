@@ -73,3 +73,32 @@ export function callSignature(call: ESTree.CallExpression): string {
   const args = call.arguments.map(argumentText).join(", ");
   return `${calleeText(call.callee)}(${args})`;
 }
+
+function expressionText(node: ESTree.Expression): string {
+  if (node.type === "CallExpression") return callSignature(node);
+  return staticValue(node);
+}
+
+/** A readable name for a callback, e.g. `() => console.log("timeout")`. */
+export function callbackLabel(node: ESTree.Node): string {
+  if (
+    node.type === "ArrowFunctionExpression" ||
+    node.type === "FunctionExpression"
+  ) {
+    const params = node.params
+      .map((param) => (param.type === "Identifier" ? param.name : "…"))
+      .join(", ");
+
+    if (
+      node.type === "ArrowFunctionExpression" &&
+      node.body.type !== "BlockStatement"
+    ) {
+      return `(${params}) => ${expressionText(node.body)}`;
+    }
+    return node.type === "ArrowFunctionExpression"
+      ? `(${params}) => { … }`
+      : `function (${params}) { … }`;
+  }
+  if (node.type === "Identifier") return node.name;
+  return "callback";
+}

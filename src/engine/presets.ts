@@ -13,6 +13,15 @@ console.log("end");
 `,
 };
 
-export const PRESETS: Preset[] = [SYNCHRONOUS_ORDER];
+const SET_TIMEOUT_ZERO: Preset = {
+  id: "set-timeout-zero",
+  label: "setTimeout(0)",
+  source: `console.log("start");
+setTimeout(() => console.log("timeout"), 0);
+console.log("end");
+`,
+};
 
-export const DEFAULT_PRESET = SYNCHRONOUS_ORDER;
+export const PRESETS: Preset[] = [SYNCHRONOUS_ORDER, SET_TIMEOUT_ZERO];
+
+export const DEFAULT_PRESET = SET_TIMEOUT_ZERO;
