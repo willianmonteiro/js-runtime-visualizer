@@ -65,13 +65,38 @@ console.log("after");
 `,
 };
 
+const NESTED_SET_TIMEOUT: Preset = {
+  id: "nested-set-timeout",
+  label: "Nested setTimeout",
+  source: `setTimeout(() => {
+  console.log("outer");
+  setTimeout(() => console.log("inner"), 0);
+}, 0);
+`,
+};
+
+const CLASSIC_MIX: Preset = {
+  id: "classic-mix",
+  label: "The classic mix",
+  source: `console.log("1");
+setTimeout(() => console.log("2"), 0);
+Promise.resolve().then(() => console.log("3"));
+setTimeout(() => console.log("4"), 0);
+Promise.resolve().then(() => console.log("5"));
+console.log("6");
+// Expected: 1, 6, 3, 5, 2, 4
+`,
+};
+
 export const PRESETS: Preset[] = [
   SYNCHRONOUS_ORDER,
   SET_TIMEOUT_ZERO,
   PROMISE_VS_TIMEOUT,
   MULTIPLE_MICROTASKS,
-  PROMISE_CHAINING,
   ASYNC_AWAIT,
+  NESTED_SET_TIMEOUT,
+  PROMISE_CHAINING,
+  CLASSIC_MIX,
 ];
 
-export const DEFAULT_PRESET = ASYNC_AWAIT;
+export const DEFAULT_PRESET = CLASSIC_MIX;
