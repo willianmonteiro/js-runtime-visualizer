@@ -51,12 +51,27 @@ const PROMISE_CHAINING: Preset = {
 `,
 };
 
+const ASYNC_AWAIT: Preset = {
+  id: "async-await",
+  label: "async / await",
+  source: `async function fetchData() {
+  console.log("fetching");
+  const result = await Promise.resolve("data");
+  console.log(result);
+}
+console.log("before");
+fetchData();
+console.log("after");
+`,
+};
+
 export const PRESETS: Preset[] = [
   SYNCHRONOUS_ORDER,
   SET_TIMEOUT_ZERO,
   PROMISE_VS_TIMEOUT,
   MULTIPLE_MICROTASKS,
   PROMISE_CHAINING,
+  ASYNC_AWAIT,
 ];
 
-export const DEFAULT_PRESET = PROMISE_VS_TIMEOUT;
+export const DEFAULT_PRESET = ASYNC_AWAIT;

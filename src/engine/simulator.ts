@@ -12,6 +12,8 @@ import type { ExecutionStep } from "./types";
 
 type CallbackFunction = ESTree.ArrowFunctionExpression | ESTree.FunctionExpression;
 
+type Scope = Map<string, string>;
+
 interface CallbackJob {
   id: string;
   label: string;
@@ -23,10 +25,15 @@ interface PendingTimer extends CallbackJob {
   expiresAt: number;
 }
 
-interface MicrotaskJob extends CallbackJob {
-  // handlers further down a `.then(...).then(...)` chain, scheduled one at a
-  // time as each preceding promise settles.
-  continuation: CallbackFunction[];
+interface MicrotaskJob {
+  id: string;
+  label: string;
+  resume: () => void;
+}
+
+interface AwaitPoint {
+  varName?: string;
+  value: string;
 }
 
 // guards against a snippet with a self-scheduling timer producing an endless trace.
@@ -96,15 +103,52 @@ function promiseChainLabel(call: ESTree.CallExpression): string {
   return root + ".then(fn)".repeat(thenCount);
 }
 
+/** The settled value of an awaited expression, e.g. `Promise.resolve("data")` yields `data` */
+function awaitedValue(node: ESTree.Expression): string {
+  if (
+    node.type === "CallExpression" &&
+    calleeText(node.callee) === "Promise.resolve"
+  ) {
+    return node.arguments[0] ? staticValue(node.arguments[0]) : "undefined";
+  }
+  return staticValue(node);
+}
+
+/** Detects `await x` or `const y = await x`, returning the bound name and settled value */
+function extractAwait(statement: ESTree.Node): AwaitPoint | null {
+  if (
+    statement.type === "ExpressionStatement" &&
+    statement.expression.type === "AwaitExpression"
+  ) {
+    return { value: awaitedValue(statement.expression.argument) };
+  }
+  if (statement.type === "VariableDeclaration" && statement.declarations.length === 1) {
+    const declarator = statement.declarations[0];
+    if (
+      declarator.init?.type === "AwaitExpression" &&
+      declarator.id.type === "Identifier"
+    ) {
+      return {
+        varName: declarator.id.name,
+        value: awaitedValue(declarator.init.argument),
+      };
+    }
+  }
+  return null;
+}
+
 class Simulator {
   private readonly trace = new Trace();
   private readonly microtaskQueue: MicrotaskJob[] = [];
   private readonly taskQueue: CallbackJob[] = [];
   private readonly timers: PendingTimer[] = [];
+  private readonly functions = new Map<string, ESTree.FunctionDeclaration>();
+  private scope: Scope = new Map();
   private clock = 0;
 
   run(source: string): ExecutionStep[] {
     const program = parseProgram(source);
+    this.hoistFunctions(program.body);
 
     const scriptFrame = this.trace.createItem({ label: "(script)", kind: "frame" });
     this.trace.pushFrame(scriptFrame);
@@ -128,6 +172,14 @@ class Simulator {
     );
 
     return this.trace.build();
+  }
+
+  private hoistFunctions(statements: ESTree.Node[]): void {
+    for (const node of statements) {
+      if (node.type === "FunctionDeclaration" && node.id) {
+        this.functions.set(node.id.name, node);
+      }
+    }
   }
 
   private runStatements(statements: ESTree.Node[]): void {
@@ -155,13 +207,22 @@ class Simulator {
       this.runSetTimeout(call);
     } else if (isThenCall(call)) {
       this.runPromiseChain(call);
+    } else if (this.functions.has(callee)) {
+      this.runUserFunction(this.functions.get(callee)!, call);
     } else {
       this.runGenericCall(call);
     }
   }
 
+  private evalArg(node: ESTree.Node): string {
+    if (node.type === "Identifier" && this.scope.has(node.name)) {
+      return this.scope.get(node.name)!;
+    }
+    return staticValue(node);
+  }
+
   private runConsoleLog(call: ESTree.CallExpression): void {
-    const output = call.arguments.map(staticValue).join(" ");
+    const output = call.arguments.map((arg) => this.evalArg(arg)).join(" ");
     const frame = this.trace.createItem({
       label: callSignature(call),
       kind: "frame",
@@ -233,7 +294,7 @@ class Simulator {
 
     if (handlers.length > 0) {
       const [first, ...rest] = handlers;
-      this.scheduleMicrotask(first, rest);
+      this.scheduleThenHandler(first, rest);
       this.trace.snapshot(
         handlers.length > 1
           ? "Because the promise is already resolved, the first `.then` handler is queued as a microtask. The chained handlers are scheduled one by one, each after its predecessor settles."
@@ -259,6 +320,115 @@ class Simulator {
     this.trace.snapshot(`\`${frame.label}\` returns, so its frame pops off the stack.`);
   }
 
+  private runUserFunction(
+    fn: ESTree.FunctionDeclaration,
+    call: ESTree.CallExpression,
+  ): void {
+    if (fn.async) {
+      this.runAsyncFunction(fn, call);
+    } else {
+      this.runSyncFunction(fn, call);
+    }
+  }
+
+  private runSyncFunction(
+    fn: ESTree.FunctionDeclaration,
+    call: ESTree.CallExpression,
+  ): void {
+    const name = fn.id?.name ?? "fn";
+    const frame = this.trace.createItem({ label: `${name}()`, kind: "frame" });
+
+    this.trace.setCurrentLine(lineOf(call));
+    this.trace.pushFrame(frame);
+    this.trace.snapshot(`Call \`${name}()\` — its frame is pushed onto the call stack.`);
+
+    const previousScope = this.scope;
+    this.scope = new Map();
+    this.runStatements(fn.body.body);
+    this.scope = previousScope;
+
+    this.trace.popFrame();
+    this.trace.snapshot(`\`${name}()\` returns, so its frame pops off the stack.`);
+  }
+
+  private runAsyncFunction(
+    fn: ESTree.FunctionDeclaration,
+    call: ESTree.CallExpression,
+  ): void {
+    const name = fn.id?.name ?? "fn";
+    const frame = this.trace.createItem({ label: `${name}()`, kind: "frame" });
+
+    this.trace.setCurrentLine(lineOf(call));
+    this.trace.pushFrame(frame);
+    this.trace.snapshot(
+      `\`${name}()\` is called. An async function runs synchronously until it reaches its first \`await\`.`,
+    );
+
+    const scope: Scope = new Map();
+    const previousScope = this.scope;
+    this.scope = scope;
+    this.runAsyncStatements(name, fn.body.body, 0, scope);
+    this.scope = previousScope;
+  }
+
+  private runAsyncStatements(
+    name: string,
+    statements: ESTree.Node[],
+    startIndex: number,
+    scope: Scope,
+  ): void {
+    for (let index = startIndex; index < statements.length; index += 1) {
+      const statement = statements[index];
+      const awaitPoint = extractAwait(statement);
+
+      if (awaitPoint) {
+        this.trace.setCurrentLine(lineOf(statement));
+        this.trace.snapshot(
+          `\`await\` pauses \`${name}\`. Because the awaited promise is already settled, the rest of \`${name}\` is scheduled as a microtask and control returns to the caller.`,
+        );
+        this.trace.popFrame();
+        this.scheduleResume(name, statements, index + 1, scope, awaitPoint);
+        return;
+      }
+
+      this.runStatement(statement);
+    }
+
+    this.trace.popFrame();
+    this.trace.snapshot(`\`${name}\` reaches its end and returns, so its frame pops off the stack.`);
+  }
+
+  // the code after an await resumes as a microtask, keeping the async function's
+  // scope and continuing from the statement that followed the await
+  private scheduleResume(
+    name: string,
+    statements: ESTree.Node[],
+    resumeIndex: number,
+    scope: Scope,
+    awaitPoint: AwaitPoint,
+  ): void {
+    const id = this.trace.freshId();
+    const label = `${name} (resumed)`;
+    const resume = () => {
+      const frame = { id, label, kind: "frame" as const };
+      this.trace.pushFrame(frame);
+
+      const previousScope = this.scope;
+      this.scope = scope;
+      if (awaitPoint.varName) {
+        scope.set(awaitPoint.varName, awaitPoint.value);
+      }
+      this.trace.snapshot(
+        `The awaited value "${awaitPoint.value}" resolves, so \`${name}\` resumes right after the \`await\`.`,
+      );
+      this.runAsyncStatements(name, statements, resumeIndex, scope);
+      this.scope = previousScope;
+    };
+
+    this.microtaskQueue.push({ id, label, resume });
+    this.trace.enqueueMicrotask({ id, label, kind: "microtask" });
+  }
+
   private runCallbackBody(callback: CallbackFunction): void {
     if (callback.body.type === "BlockStatement") {
       this.runStatements(callback.body.body);
@@ -267,13 +437,34 @@ class Simulator {
     }
   }
 
-  private scheduleMicrotask(
-    callback: CallbackFunction,
+  private scheduleThenHandler(
+    handler: CallbackFunction,
     continuation: CallbackFunction[],
   ): void {
     const id = this.trace.freshId();
-    const label = callbackLabel(callback);
-    this.microtaskQueue.push({ id, label, callback, continuation });
+    const label = callbackLabel(handler);
+    const resume = () => {
+      const frame = { id, label, kind: "frame" as const };
+      this.trace.pushFrame(frame);
+      this.trace.snapshot(`The microtask \`${label}\` runs.`);
+
+      this.runCallbackBody(handler);
+
+      // handlers further down a `.then(...).then(...)` chain, scheduled one at a
+      // time as each preceding promise settles.
+      if (continuation.length > 0) {
+        const [next, ...rest] = continuation;
+        this.scheduleThenHandler(next, rest);
+        this.trace.snapshot(
+          "This handler settles the next promise in the chain, queuing the following `.then` handler as a microtask.",
+        );
+      }
+
+      this.trace.popFrame();
+      this.trace.snapshot("The microtask finishes, so its frame pops off the stack.");
+    };
+
+    this.microtaskQueue.push({ id, label, resume });
     this.trace.enqueueMicrotask({ id, label, kind: "microtask" });
   }
 
@@ -286,8 +477,8 @@ class Simulator {
     ) {
       if (iterations++ > MAX_LOOP_ITERATIONS) break;
 
-      // A timer that has already elapsed waits in the callback queue while the
-      // microtask queue drains, so both queues can be populated at once.
+      // a timer that has already elapsed waits in the callback queue while the
+      // microtask queue drains, so both queues can be populated at once
       this.flushExpiredTimers();
 
       if (this.microtaskQueue.length > 0) {
@@ -312,26 +503,11 @@ class Simulator {
       );
       this.trace.setEventLoopActive(false);
 
-      const frame = { id: job.id, label: job.label, kind: "frame" as const };
-      this.trace.pushFrame(frame);
-      this.trace.snapshot(`The microtask \`${job.label}\` runs.`);
-
-      this.runCallbackBody(job.callback);
-
-      if (job.continuation.length > 0) {
-        const [next, ...rest] = job.continuation;
-        this.scheduleMicrotask(next, rest);
-        this.trace.snapshot(
-          "This handler settles the next promise in the chain, queuing the following `.then` handler as a microtask.",
-        );
-      }
-
-      this.trace.popFrame();
-      this.trace.snapshot("The microtask finishes, so its frame pops off the stack.");
+      job.resume();
     }
   }
 
-  /** Moves every timer whose delay has elapsed from the Web APIs to the queue. */
+  /** Moves every timer whose delay has elapsed from the Web APIs to the queue */
   private flushExpiredTimers(): void {
     const ready = this.timers
       .filter((timer) => timer.expiresAt <= this.clock)
