@@ -13,8 +13,19 @@ export default function App() {
     DEFAULT_PRESET.id,
   );
 
-  const { step, index, total, atEnd, stepForward, reset } =
-    useSimulation(source);
+  const {
+    step,
+    index,
+    total,
+    atEnd,
+    isPlaying,
+    speed,
+    stepForward,
+    play,
+    pause,
+    reset,
+    setSpeed,
+  } = useSimulation(source);
 
   const handleSourceChange = useCallback((value: string) => {
     setSource(value);
@@ -47,7 +58,16 @@ export default function App() {
         index={index}
         total={total}
       />
-      <ControlsBar onStep={stepForward} onReset={reset} canStep={!atEnd} />
+      <ControlsBar
+        isPlaying={isPlaying}
+        canStep={!atEnd}
+        speed={speed}
+        onPlay={play}
+        onPause={pause}
+        onStep={stepForward}
+        onReset={reset}
+        onSpeedChange={setSpeed}
+      />
     </div>
   );
 }
