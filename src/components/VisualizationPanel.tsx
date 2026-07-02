@@ -31,7 +31,8 @@ export default function VisualizationPanel({ step }: { step: ExecutionStep }) {
     <div className="flex h-full flex-col gap-3">
       <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[1fr_1fr] gap-3 lg:grid-cols-2">
         <Zone meta={ZONES.callStack}>
-          <ZoneContents items={step.callStack} />
+          {/* newest frame on top, the way a call stack is conventionally drawn */}
+          <ZoneContents items={[...step.callStack].reverse()} />
         </Zone>
         <Zone meta={ZONES.webApis}>
           <ZoneContents items={step.webApis} />

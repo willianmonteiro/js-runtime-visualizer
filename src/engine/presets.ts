@@ -13,6 +13,23 @@ console.log("end");
 `,
 };
 
+const CALL_STACK: Preset = {
+  id: "call-stack",
+  label: "Call stack (nested calls)",
+  source: `function multiply(a, b) {
+  return a * b;
+}
+function square(n) {
+  return multiply(n, n);
+}
+function printSquare(n) {
+  var squared = square(n);
+  console.log(squared);
+}
+printSquare(4);
+`,
+};
+
 const SET_TIMEOUT_ZERO: Preset = {
   id: "set-timeout-zero",
   label: "setTimeout(0)",
@@ -90,6 +107,7 @@ console.log("6");
 
 export const PRESETS: Preset[] = [
   SYNCHRONOUS_ORDER,
+  CALL_STACK,
   SET_TIMEOUT_ZERO,
   PROMISE_VS_TIMEOUT,
   MULTIPLE_MICROTASKS,

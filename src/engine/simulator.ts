@@ -12,7 +12,9 @@ import type { ExecutionStep } from "./types";
 
 type CallbackFunction = ESTree.ArrowFunctionExpression | ESTree.FunctionExpression;
 
-type Scope = Map<string, string>;
+type Value = string | number | boolean | null | undefined;
+
+type Scope = Map<string, Value>;
 
 interface CallbackJob {
   id: string;
@@ -114,6 +116,27 @@ function awaitedValue(node: ESTree.Expression): string {
   return staticValue(node);
 }
 
+function display(value: Value): string {
+  return value === undefined ? "undefined" : String(value);
+}
+
+function applyBinaryOperator(operator: string, left: Value, right: Value): Value {
+  switch (operator) {
+    case "+":
+      return (left as number) + (right as number);
+    case "-":
+      return (left as number) - (right as number);
+    case "*":
+      return (left as number) * (right as number);
+    case "/":
+      return (left as number) / (right as number);
+    case "%":
+      return (left as number) % (right as number);
+    default:
+      return undefined;
+  }
+}
+
 /** Detects `await x` or `const y = await x`, returning the bound name and settled value */
 function extractAwait(statement: ESTree.Node): AwaitPoint | null {
   if (
@@ -194,9 +217,24 @@ class Simulator {
       node.expression.type === "CallExpression"
     ) {
       this.runCall(node.expression);
+      return;
     }
-    // declarations and other statements have no observable runtime effect in
-    // supported subset, so they are skipped
+    if (node.type === "VariableDeclaration") {
+      this.runVariableDeclaration(node);
+    }
+    // other statements have no observable runtime effect in the supported
+    // subset, so they are skipped
+  }
+
+  private runVariableDeclaration(node: ESTree.VariableDeclaration): void {
+    for (const declarator of node.declarations) {
+      if (declarator.id.type !== "Identifier") continue;
+      const value = declarator.init ? this.evaluate(declarator.init) : undefined;
+      this.scope.set(declarator.id.name, value);
+      this.trace.snapshot(
+        `\`${declarator.id.name}\` is assigned \`${display(value)}\`.`,
+      );
+    }
   }
 
   private runCall(call: ESTree.CallExpression): void {
@@ -214,15 +252,51 @@ class Simulator {
     }
   }
 
-  private evalArg(node: ESTree.Node): string {
-    if (node.type === "Identifier" && this.scope.has(node.name)) {
-      return this.scope.get(node.name)!;
+  /** Evaluates an expression to a value, invoking user functions as a side effect */
+  private evaluate(node: ESTree.Node): Value {
+    switch (node.type) {
+      case "Literal":
+        return node.value as Value;
+      case "Identifier":
+        return this.scope.has(node.name) ? this.scope.get(node.name) : undefined;
+      case "BinaryExpression":
+        return applyBinaryOperator(
+          node.operator,
+          this.evaluate(node.left),
+          this.evaluate(node.right),
+        );
+      case "TemplateLiteral":
+        return node.quasis
+          .map(
+            (quasi, index) =>
+              quasi.value.cooked +
+              (node.expressions[index] !== undefined
+                ? display(this.evaluate(node.expressions[index]))
+                : ""),
+          )
+          .join("");
+      case "CallExpression":
+        return this.evaluateCall(node);
+      default:
+        return undefined;
     }
-    return staticValue(node);
+  }
+
+  private evaluateCall(call: ESTree.CallExpression): Value {
+    const callee = calleeText(call.callee);
+    if (callee === "console.log") {
+      this.runConsoleLog(call);
+      return undefined;
+    }
+    const fn = this.functions.get(callee);
+    if (fn && !fn.async) {
+      return this.callUserFunction(fn, call);
+    }
+    return undefined;
   }
 
   private runConsoleLog(call: ESTree.CallExpression): void {
-    const output = call.arguments.map((arg) => this.evalArg(arg)).join(" ");
+    const output = call.arguments.map((arg) => display(this.evaluate(arg))).join(" ");
     const frame = this.trace.createItem({
       label: callSignature(call),
       kind: "frame",
@@ -327,28 +401,54 @@ class Simulator {
     if (fn.async) {
       this.runAsyncFunction(fn, call);
     } else {
-      this.runSyncFunction(fn, call);
+      this.callUserFunction(fn, call);
     }
   }
 
-  private runSyncFunction(
+  // arguments are evaluated in the caller's scope before the frame is pushed,
+  // then bound to the parameters inside a fresh scope for the function body
+  private callUserFunction(
     fn: ESTree.FunctionDeclaration,
     call: ESTree.CallExpression,
-  ): void {
+  ): Value {
     const name = fn.id?.name ?? "fn";
-    const frame = this.trace.createItem({ label: `${name}()`, kind: "frame" });
+    const argumentValues = call.arguments.map((arg) => this.evaluate(arg));
 
+    const frame = this.trace.createItem({
+      label: callSignature(call),
+      kind: "frame",
+    });
     this.trace.setCurrentLine(lineOf(call));
     this.trace.pushFrame(frame);
-    this.trace.snapshot(`Call \`${name}()\` — its frame is pushed onto the call stack.`);
+    this.trace.snapshot(`Call \`${frame.label}\` — its frame is pushed onto the call stack.`);
 
     const previousScope = this.scope;
-    this.scope = new Map();
-    this.runStatements(fn.body.body);
+    const localScope: Scope = new Map();
+    fn.params.forEach((param, index) => {
+      if (param.type === "Identifier") localScope.set(param.name, argumentValues[index]);
+    });
+    this.scope = localScope;
+    const returnValue = this.runFunctionBody(fn.body.body);
     this.scope = previousScope;
 
     this.trace.popFrame();
-    this.trace.snapshot(`\`${name}()\` returns, so its frame pops off the stack.`);
+    this.trace.snapshot(
+      returnValue === undefined
+        ? `\`${name}\` returns, so its frame pops off the stack.`
+        : `\`${name}\` returns \`${display(returnValue)}\`, so its frame pops off the stack.`,
+    );
+
+    return returnValue;
+  }
+
+  private runFunctionBody(statements: ESTree.Node[]): Value {
+    for (const statement of statements) {
+      if (statement.type === "ReturnStatement") {
+        return statement.argument ? this.evaluate(statement.argument) : undefined;
+      }
+      this.runStatement(statement);
+    }
+    return undefined;
   }
 
   private runAsyncFunction(
