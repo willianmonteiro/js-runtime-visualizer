@@ -4,6 +4,8 @@ An interactive tool that simulates how the JavaScript engine and event loop
 execute code. Watch frames move between the **Call Stack**, **Web APIs**,
 **Microtask Queue**, and **Callback Queue**, one step at a time.
 
+**🔗 Live demo: https://willianmonteiro.github.io/js-runtime-visualizer/**
+
 > **Inspired by** Philip Roberts' talk _"What the heck is the event loop
 > anyway?"_ (JSConf EU) — the canonical explainer this project brings to life:
 > https://www.youtube.com/watch?v=8aGhZQkoFbQ
