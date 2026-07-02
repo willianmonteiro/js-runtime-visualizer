@@ -1,19 +1,17 @@
-import { motion } from "framer-motion";
+import Header from "./components/Header";
+import EditorPanel from "./components/EditorPanel";
+import VisualizationPanel from "./components/VisualizationPanel";
+import ControlsBar from "./components/ControlsBar";
 
 export default function App() {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4">
-      <motion.h1
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-        className="font-mono text-2xl font-semibold text-slate-100"
-      >
-        JS Runtime Visualizer
-      </motion.h1>
-      <p className="font-mono text-sm text-slate-500">
-        React · TypeScript · Tailwind · Framer Motion
-      </p>
+    <div className="flex h-full flex-col bg-surface">
+      <Header />
+      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(320px,2fr)_3fr]">
+        <EditorPanel />
+        <VisualizationPanel />
+      </main>
+      <ControlsBar />
     </div>
   );
 }
