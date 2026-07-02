@@ -30,6 +30,22 @@ printSquare(4);
 `,
 };
 
+const STACK_TRACE: Preset = {
+  id: "stack-trace",
+  label: "Uncaught error (stack trace)",
+  source: `function foo() {
+  throw new Error('Oops!');
+}
+function bar() {
+  foo();
+}
+function baz() {
+  bar();
+}
+baz();
+`,
+};
+
 const SET_TIMEOUT_ZERO: Preset = {
   id: "set-timeout-zero",
   label: "setTimeout(0)",
@@ -108,6 +124,7 @@ console.log("6");
 export const PRESETS: Preset[] = [
   SYNCHRONOUS_ORDER,
   CALL_STACK,
+  STACK_TRACE,
   SET_TIMEOUT_ZERO,
   PROMISE_VS_TIMEOUT,
   MULTIPLE_MICROTASKS,

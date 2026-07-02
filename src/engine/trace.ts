@@ -73,7 +73,16 @@ export class Trace {
   }
 
   print(text: string): void {
-    this.state.consoleOutput = [...this.state.consoleOutput, text];
+    this.state.consoleOutput = [...this.state.consoleOutput, { text, level: "log" }];
+  }
+
+  printError(text: string): void {
+    this.state.consoleOutput = [...this.state.consoleOutput, { text, level: "error" }];
+  }
+
+  /** Current frame labels, top of the stack first — used to capture a stack trace */
+  stackLabels(): string[] {
+    return [...this.state.callStack].reverse().map((frame) => frame.label);
   }
 
   setCurrentLine(line: number | null): void {

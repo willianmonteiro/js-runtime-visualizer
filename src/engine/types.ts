@@ -7,12 +7,17 @@ export interface RuntimeItem {
   kind: ItemKind;
 }
 
+export interface ConsoleEntry {
+  text: string;
+  level: "log" | "error";
+}
+
 export interface ExecutionState {
   callStack: RuntimeItem[];
   webApis: RuntimeItem[];
   microtaskQueue: RuntimeItem[];
   callbackQueue: RuntimeItem[];
-  consoleOutput: string[];
+  consoleOutput: ConsoleEntry[];
   currentLine: number | null;
   eventLoopActive: boolean;
 }

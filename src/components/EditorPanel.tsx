@@ -1,11 +1,12 @@
 import { PRESETS } from "../engine/presets";
+import type { ConsoleEntry } from "../engine/types";
 import CodeEditor from "./editor/CodeEditor";
 
 interface EditorPanelProps {
   source: string;
   onSourceChange: (value: string) => void;
   currentLine: number | null;
-  consoleOutput: string[];
+  consoleOutput: ConsoleEntry[];
   activePresetId: string | null;
   onSelectPreset: (id: string) => void;
 }
@@ -37,7 +38,7 @@ export default function EditorPanel({
         <div className="border-b border-edge px-4 py-2 font-mono text-xs uppercase tracking-wider text-slate-400">
           Presets
         </div>
-        <ul className="flex flex-col p-2">
+        <ul className="flex max-h-44 flex-col overflow-y-auto p-2">
           {PRESETS.map((preset) => {
             const active = preset.id === activePresetId;
             return (
@@ -67,12 +68,18 @@ export default function EditorPanel({
           {consoleOutput.length === 0 ? (
             <p className="text-[11px] text-slate-600">no output yet</p>
           ) : (
-            consoleOutput.map((line, index) => (
-              <div key={index} className="text-emerald-300">
-                <span className="mr-2 select-none text-slate-600">›</span>
-                {line}
-              </div>
-            ))
+            consoleOutput.map((entry, index) =>
+              entry.level === "error" ? (
+                <div key={index} className="whitespace-pre text-rose-400">
+                  {entry.text}
+                </div>
+              ) : (
+                <div key={index} className="text-emerald-300">
+                  <span className="mr-2 select-none text-slate-600">›</span>
+                  {entry.text}
+                </div>
+              ),
+            )
           )}
         </div>
       </section>

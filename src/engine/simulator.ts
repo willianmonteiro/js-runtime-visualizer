@@ -116,6 +116,34 @@ function awaitedValue(node: ESTree.Expression): string {
   return staticValue(node);
 }
 
+// thrown internally to unwind the simulator's own recursion when the running
+// program throws; carries the stack trace captured at the throw site
+class SimulatedError {
+  constructor(
+    readonly name: string,
+    readonly message: string,
+    readonly stackTrace: string[],
+  ) {}
+}
+
+function throwInfo(argument: ESTree.Expression): { name: string; message: string } {
+  if (argument.type === "NewExpression") {
+    const name =
+      argument.callee.type === "Identifier" ? argument.callee.name : "Error";
+    const first = argument.arguments[0];
+    const message = first?.type === "Literal" ? String(first.value) : "";
+    return { name, message };
+  }
+  if (argument.type === "Literal") {
+    return { name: "Error", message: String(argument.value) };
+  }
+  return { name: "Error", message: "" };
+}
+
+function formatStackFrame(label: string): string {
+  return label === "(script)" ? "(anonymous)" : label.replace(/\(.*\)$/, "");
+}
+
 function display(value: Value): string {
   return value === undefined ? "undefined" : String(value);
 }
@@ -179,12 +207,16 @@ class Simulator {
       "The engine starts running the script. A frame for the top-level code sits on the call stack.",
     );
 
-    this.runStatements(program.body);
-
-    this.trace.popFrame();
-    this.trace.snapshot(
-      "Top-level code finishes, so the `(script)` frame leaves the stack.",
-    );
+    try {
+      this.runStatements(program.body);
+      this.trace.popFrame();
+      this.trace.snapshot(
+        "Top-level code finishes, so the `(script)` frame leaves the stack.",
+      );
+    } catch (error) {
+      if (!(error instanceof SimulatedError)) throw error;
+      this.reportUncaughtError(error);
+    }
 
     this.runEventLoop();
 
@@ -221,9 +253,39 @@ class Simulator {
     }
     if (node.type === "VariableDeclaration") {
       this.runVariableDeclaration(node);
+      return;
+    }
+    if (node.type === "ThrowStatement") {
+      this.runThrow(node);
     }
     // other statements have no observable runtime effect in the supported
     // subset, so they are skipped
+  }
+
+  private runThrow(node: ESTree.ThrowStatement): void {
+    const { name, message } = throwInfo(node.argument);
+    const stackTrace = this.trace.stackLabels();
+    const thrower = formatStackFrame(stackTrace[0] ?? "(anonymous)");
+
+    this.trace.setCurrentLine(lineOf(node));
+    this.trace.snapshot(
+      `\`throw\` raises \`${name}: ${message}\` inside \`${thrower}\`. With no try/catch to handle it, the error begins unwinding the call stack.`,
+    );
+
+    throw new SimulatedError(name, message, stackTrace);
+  }
+
+  private reportUncaughtError(error: SimulatedError): void {
+    this.trace.printError(`Uncaught ${error.name}: ${error.message}`);
+    for (const frame of error.stackTrace) {
+      this.trace.printError(`    at ${formatStackFrame(frame)}`);
+    }
+    this.trace.snapshot(
+      `The error is never caught, so the runtime logs "Uncaught ${error.name}: ${error.message}" with the stack trace captured at the throw.`,
+    );
+
+    this.trace.popFrame();
+    this.trace.snapshot("The uncaught error unwound the entire call stack, which is now empty.");
   }
 
   private runVariableDeclaration(node: ESTree.VariableDeclaration): void {
@@ -428,7 +490,17 @@ class Simulator {
       if (param.type === "Identifier") localScope.set(param.name, argumentValues[index]);
     });
     this.scope = localScope;
-    const returnValue = this.runFunctionBody(fn.body.body);
+    let returnValue: Value;
+    try {
+      returnValue = this.runFunctionBody(fn.body.body);
+    } catch (error) {
+      this.scope = previousScope;
+      if (error instanceof SimulatedError) {
+        this.trace.popFrame();
+        this.trace.snapshot(`The error unwinds \`${name}\` off the call stack.`);
+      }
+      throw error;
+    }
     this.scope = previousScope;
 
     this.trace.popFrame();
