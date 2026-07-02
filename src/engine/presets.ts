@@ -22,6 +22,41 @@ console.log("end");
 `,
 };
 
-export const PRESETS: Preset[] = [SYNCHRONOUS_ORDER, SET_TIMEOUT_ZERO];
+const PROMISE_VS_TIMEOUT: Preset = {
+  id: "promise-vs-timeout",
+  label: "Promise vs setTimeout",
+  source: `console.log("start");
+setTimeout(() => console.log("timeout"), 0);
+Promise.resolve().then(() => console.log("promise"));
+console.log("end");
+`,
+};
 
-export const DEFAULT_PRESET = SET_TIMEOUT_ZERO;
+const MULTIPLE_MICROTASKS: Preset = {
+  id: "multiple-microtasks",
+  label: "Multiple microtasks",
+  source: `Promise.resolve().then(() => console.log("promise 1"));
+Promise.resolve().then(() => console.log("promise 2"));
+setTimeout(() => console.log("timeout"), 0);
+`,
+};
+
+const PROMISE_CHAINING: Preset = {
+  id: "promise-chaining",
+  label: "Promise chaining",
+  source: `Promise.resolve()
+  .then(() => console.log("first"))
+  .then(() => console.log("second"))
+  .then(() => console.log("third"));
+`,
+};
+
+export const PRESETS: Preset[] = [
+  SYNCHRONOUS_ORDER,
+  SET_TIMEOUT_ZERO,
+  PROMISE_VS_TIMEOUT,
+  MULTIPLE_MICROTASKS,
+  PROMISE_CHAINING,
+];
+
+export const DEFAULT_PRESET = PROMISE_VS_TIMEOUT;

@@ -17,7 +17,7 @@ const EMPTY_STATE: ExecutionState = {
  *
  * RuntimeItems are never mutated in place: a card that changes zone is written
  * as a fresh object that keeps the same `id`. This keeps past snapshots intact
- * while giving the animation layer a stable identity to follow across zones.
+ * while giving the animation layer a stable identity to follow across zones
  */
 export class Trace {
   private readonly steps: ExecutionStep[] = [];
@@ -58,6 +58,18 @@ export class Trace {
 
   hasCallbacks(): boolean {
     return this.state.callbackQueue.length > 0;
+  }
+
+  enqueueMicrotask(item: RuntimeItem): void {
+    this.state.microtaskQueue = [...this.state.microtaskQueue, item];
+  }
+
+  dequeueMicrotask(): void {
+    this.state.microtaskQueue = this.state.microtaskQueue.slice(1);
+  }
+
+  hasMicrotasks(): boolean {
+    return this.state.microtaskQueue.length > 0;
   }
 
   print(text: string): void {
