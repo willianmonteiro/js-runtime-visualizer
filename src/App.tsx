@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import Header from "./components/Header";
 import EditorPanel from "./components/EditorPanel";
 import VisualizationPanel from "./components/VisualizationPanel";
-import StatusBar from "./components/StatusBar";
+import ExplanationPanel from "./components/ExplanationPanel";
 import ControlsBar from "./components/ControlsBar";
 import { useSimulation } from "./hooks/useSimulation";
 import { DEFAULT_PRESET, PRESETS } from "./engine/presets";
@@ -42,7 +42,11 @@ export default function App() {
         />
         <VisualizationPanel step={step} />
       </main>
-      <StatusBar explanation={step.explanation} index={index} total={total} />
+      <ExplanationPanel
+        explanation={step.explanation}
+        index={index}
+        total={total}
+      />
       <ControlsBar onStep={stepForward} onReset={reset} canStep={!atEnd} />
     </div>
   );
