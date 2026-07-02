@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { ZONES } from "../zones";
 import type { ExecutionStep, RuntimeItem } from "../engine/types";
 import Zone from "./Zone";
@@ -5,15 +6,23 @@ import ItemCard from "./ItemCard";
 import EventLoopIndicator from "./EventLoopIndicator";
 
 function ZoneContents({ items }: { items: RuntimeItem[] }) {
-  if (items.length === 0) {
-    return <p className="pt-1 font-mono text-[11px] text-slate-600">empty</p>;
-  }
   return (
-    <>
-      {items.map((item) => (
-        <ItemCard key={item.id} item={item} />
-      ))}
-    </>
+    <AnimatePresence mode="popLayout" initial={false}>
+      {items.length === 0 ? (
+        <motion.p
+          key="empty"
+          layout
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="pt-1 font-mono text-[11px] text-slate-600"
+        >
+          empty
+        </motion.p>
+      ) : (
+        items.map((item) => <ItemCard key={item.id} item={item} />)
+      )}
+    </AnimatePresence>
   );
 }
 

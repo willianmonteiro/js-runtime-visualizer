@@ -20,7 +20,9 @@ export default function Zone({ meta, children }: ZoneProps) {
           {meta.subtitle}
         </span>
       </header>
-      <div className="min-h-0 flex-1 space-y-2 overflow-auto p-3">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3">
+        {children}
+      </div>
     </section>
   );
 }
