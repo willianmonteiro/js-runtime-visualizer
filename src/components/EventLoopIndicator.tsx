@@ -1,12 +1,24 @@
-export default function EventLoopIndicator() {
+export default function EventLoopIndicator({ active }: { active: boolean }) {
   return (
-    <div className="flex items-center justify-center gap-3 rounded-lg border border-edge bg-surface-raised px-4 py-2">
-      <span className="text-slate-500">↻</span>
-      <span className="font-mono text-xs font-medium text-slate-300">
+    <div
+      className={`flex items-center justify-center gap-3 rounded-lg border px-4 py-2 transition-colors ${
+        active
+          ? "border-sky-500/50 bg-sky-500/10"
+          : "border-edge bg-surface-raised"
+      }`}
+    >
+      <span className={active ? "text-sky-300" : "text-slate-500"}>↻</span>
+      <span
+        className={`font-mono text-xs font-medium ${
+          active ? "text-sky-200" : "text-slate-300"
+        }`}
+      >
         Event Loop
       </span>
       <span className="text-xs text-slate-500">
-        is the call stack empty?
+        {active
+          ? "call stack is empty — checking the queues"
+          : "waiting for the call stack to empty"}
       </span>
     </div>
   );
